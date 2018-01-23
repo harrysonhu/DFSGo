@@ -12,9 +12,14 @@ import "fmt"
 import "net/rpc"
 import "os"
 import (
-    "unicode"
     "net"
     "time"
+    "strings"
+    //"encoding/json"
+    //"encoding/binary"
+    "encoding/json"
+    //"bytes"
+    //"io"
 )
 
 var rServerConn *rpc.Client
@@ -119,7 +124,7 @@ type DFSFile interface {
 
     // Closes the file/cleans up. Can return the following errors:
     // - DisconnectedError
-    Close()
+    Close() (err error)
 }
 
 // Represents a connection to the DFS system.
@@ -157,13 +162,54 @@ type DFS interface {
 }
 
 type Client struct {
-    ConnectionID int
-    IsConnected bool
+    rpcConnection *rpc.Client
+    //ClientRPC *rpc.Server
+    Ip string
+    Id string
     LocalPath string    
 }
 
-type File struct {
+//type File struct {
+//    name string
+//}
 
+type DFSFileStruct struct {
+    name string
+    file os.File
+    content [256]Chunk
+    mode FileMode
+}
+
+func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
+    if chunkNum < 0 || chunkNum > 255 {
+        return ChunkUnavailableError(chunkNum)
+    }
+    readBuf := make([]byte, 32)
+    dfs.file.Seek(int64(chunkNum * 32), 0)
+    _, err = dfs.file.Read(readBuf)
+    CheckError("Error in reading a chunk of a file: ", err)
+    json.Unmarshal(readBuf, *chunk)
+    return nil
+}
+
+func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
+    if dfs.mode == READ || dfs.mode == DREAD {
+        return BadFileModeError(dfs.mode)
+    }
+    b, err := json.Marshal(*chunk)
+    _, err = dfs.file.Write(b)
+    CheckError("Error in writing to a file: ", err)
+
+    //json.Unmarshal(b, &dfs.content[chunkNum])
+    //f.content[chunkNum] = *chunk
+    return nil
+}
+
+func (dfs DFSFileStruct) Close() (err error) {
+    err = dfs.Close()
+    CheckError("Error in closing the file: ", err)
+
+    return nil
 }
 
 func (c Client) LocalFileExists(fname string) (exists bool, err error) {
@@ -197,35 +243,57 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      if isBadFileName(fname) {
          return nil, BadFilenameError(fname)
      }
+     dfsFileStruct := DFSFileStruct{
+         name: fname,
+         mode: mode,
+     }
      doesFileExist, err := c.GlobalFileExists(fname)
      if !doesFileExist {
-         //newFile, err := os.Create(fname)
-     } else {
+         _, err := os.Create(fname)
 
+         CheckError("Error in creating the file: ", err)
+     }
+     if mode == READ {
+         file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
+         CheckError("Error in opening the file for READ: ", err)
+         dfsFileStruct.file = *file
+     } else if mode == WRITE {
+         file, err := os.OpenFile(fname, os.O_RDWR, 0666)
+         CheckError("Error in opening the file for WRITE: ", err)
+         dfsFileStruct.file = *file
+     } else if mode == DREAD {
+         file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
+         CheckError("Error in opening the file for DREAD: ", err)
+         dfsFileStruct.file = *file
      }
 
-     return nil, nil
+
+     return dfsFileStruct, nil
  }
 
 func (c Client) UMountDFS() (err error) {
-    rServerConn.Call("Listener.UnregisterClient", c, &c.IsConnected)
+    //var reply Client.IsConnected
+    rServerConn.Call("Server.UnregisterClient", c, &c)
     rServerConn.Close()
+
+    return nil
 }
 
 func isBadFileName(fname string) bool {
+    const alphaNumeric = "abcdefghijklmnopqrstuvwxyz0123456789"
     if len(fname) < 1 || len(fname) > 16 {
         return true
     }
 
-    for _, r := range fname {
-        if !unicode.IsLetter(r) || !unicode.IsDigit(r) {
+    for _, char := range fname {
+        if !strings.Contains(alphaNumeric, string(char)) {
             return true
         }
     }
     return false
 }
 
-func GoBeat(sAddr string) {
+func GoBeat(sAddr string, c Client) {
     go func() {
         for {
             Beat(sAddr, "Hello")
@@ -233,6 +301,20 @@ func GoBeat(sAddr string) {
             time.Sleep(time.Second * 2)
         }
     }()
+
+    // Listen to server response.. if server responds close, then close the
+    // client that is associated with this GoBeat (passed in parameters)
+    heartbeat, err := net.ResolveUDPAddr("udp", sAddr)
+    CheckError("ResolveUDPAddr failed: ", err)
+
+    heartbeatConn, err := net.ListenUDP("udp", heartbeat)
+    CheckError("ListenUDP for heartbeat failed: ", err)
+    readBuf := make([]byte, 100)
+    n, err := heartbeatConn.Read(readBuf)
+    CheckError("Reading heartbeat message from server failed: ", err)
+    if n > 0 {
+        c.UMountDFS()
+    }
 }
 
 func Beat(sAddr string, msg string) {
@@ -265,27 +347,32 @@ func Beat(sAddr string, msg string) {
 // - Networking errors related to localIP or serverAddr
 func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err error) {
     // TODO
+    localIP = localIP + ":5055"
+    client := Client{
+        rpcConnection: rServerConn,
+        Ip: localIP,
+        LocalPath: localPath,
+    }
 
-    saddr, err := net.ResolveTCPAddr("tcp", serverAddr)
-    CheckError("Connecting to server: ", err)
-    localIP = localIP + ":0"
-    laddr, err := net.ResolveTCPAddr("tcp", localIP)
-    CheckError("Converting localIP to TCP address: ", err)
-    
+    conn, err := net.ResolveTCPAddr("tcp", localIP)
+    CheckError("Error in resolving serverAddr in MountDFS: ", err)
+    rpcConn, err := net.ListenTCP("tcp", conn)
+    CheckError("Error in setting up server-client rpc in MountDFS: ", err)
+
+    rpc.Register(client)
+    go rpc.Accept(rpcConn)
+
     // Connect to server
-    serverConn, err := net.DialTCP("tcp", laddr, saddr)
+    rServerConn, err := rpc.Dial("tcp", serverAddr)
     CheckError("Dialing the server: ", err)
 
-    rServerConn = rpc.NewClient(serverConn)
-    client := Client{
-        ConnectionID: -1,
-        IsConnected: false,
-    }
-    err = rServerConn.Call("Listener.RegisterClient", client, &client.ConnectionID)
+    var id string
+    err = rServerConn.Call("Server.RegisterClient", client, &id)
     CheckError("RegisterClient error: ", err)
+    client.Id = id
 
     // start UDP heartbeat for client
-    GoBeat(serverAddr)
+    //GoBeat(serverAddr, client)
 
     return client, nil
 }

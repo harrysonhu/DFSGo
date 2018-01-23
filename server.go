@@ -8,17 +8,38 @@ import (
 	"os"
 	"./dfslib"
 	"math/rand"
+	"strconv"
 )
 
-type Listener int
+type Client struct {
+	rpcConnection *rpc.Client
+	Id string
+	LocalPath string
+	IsConnected bool
+}
 
-func (l *Listener) RegisterClient(client *dfslib.Client, clientId *int) error {
-	*clientId = rand.Intn(1000)
-	client.IsConnected = true
+type Server struct {
+	RegisteredClients map [string]Client
+}
+
+func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
+	*id = client.LocalPath + strconv.Itoa(rand.Intn(100))
+
+	rpcConn, err := rpc.Dial("tcp", client.Ip)
+	dfslib.CheckError("Error in setting up server to client rpc connection in RegisterClient: ", err)
+
+	serverClient := Client{
+		rpcConnection: rpcConn,
+		Id: *id,
+		LocalPath: client.LocalPath,
+		IsConnected: true,
+	}
+	s.RegisteredClients = make(map[string]Client)
+	s.RegisteredClients[*id] = serverClient
 	return nil
 }
 
-func (l *Listener) UnregisterClient(client *dfslib.Client, isConnected *bool) error {
+func (s *Server) UnregisterClient(client *dfslib.Client, isConnected *bool) error {
 	*isConnected = false
 	return nil
 }
@@ -33,11 +54,13 @@ func main() {
 	incoming, err := net.ListenTCP("tcp", conn)
 	dfslib.CheckError("ListenTCP for server failed: ", err)
 
-	handleHeartbeat(incomingIP)
+	//handleHeartbeat(incomingIP)
 
-	listener := new(Listener)
-	rpc.Register(listener)
-	rpc.Accept(incoming)
+	server := new(Server)
+	rpc.Register(server)
+	go rpc.Accept(incoming)
+
+	blockForever()
 
 }
 
@@ -65,8 +88,14 @@ func handleHeartbeat(incomingIP string) {
 			// After 3 straight missed beats (6 seconds), assume client is dead
 			if missedBeats == 3 {
 				// close client connection because client died
+				msg := "Close connection"
+				_, err = heartbeatConn.Write([]byte(msg))
 			}
 		}
 	}()
+}
+
+func blockForever() {
+	select {}
 }
 
