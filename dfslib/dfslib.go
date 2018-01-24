@@ -87,6 +87,13 @@ func (e BadFilenameError) Error() string {
     return fmt.Sprintf("DFS: Filename [%s] includes illegal characters or has the wrong length", string(e))
 }
 
+// Contains filename
+type FileUnavailableError string
+
+func (e FileUnavailableError) Error() string {
+    return fmt.Sprintf("DFS: Filename [%s] is unavailable", string(e))
+}
+
 // Contains local path
 type LocalPathError string
 
@@ -162,21 +169,18 @@ type DFS interface {
 }
 
 type Client struct {
-    rpcConnection *rpc.Client
-    //ClientRPC *rpc.Server
+    clientToServerRpc *rpc.Client
+    Files map[string]DFSFileStruct
     Ip string
     Id string
-    LocalPath string    
+    LocalPath string
+    IsConnected bool
 }
 
-//type File struct {
-//    name string
-//}
-
 type DFSFileStruct struct {
-    name string
+    Name string
     file os.File
-    content [256]Chunk
+    //content [256]Chunk
     mode FileMode
 }
 
@@ -206,7 +210,7 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
 }
 
 func (dfs DFSFileStruct) Close() (err error) {
-    err = dfs.Close()
+    err = dfs.file.Close()
     CheckError("Error in closing the file: ", err)
 
     return nil
@@ -217,12 +221,13 @@ func (c Client) LocalFileExists(fname string) (exists bool, err error) {
         return false, BadFilenameError(fname) 
     }
 
-    if _, err := os.Stat(fname); os.IsNotExist(err) {
-        // file does not exist; should return FileDoesNotExistError?
-        return false, nil
-    } else {
-        return true, nil
+    // Loop through all the entries in a Client's files map
+    for k, _ := range c.Files {
+        if k == fname {
+            return true, nil
+        }
     }
+    return false, nil
 }
 
 // What's the difference between this method and localFileExists??
@@ -231,50 +236,65 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
         return false, BadFilenameError(fname) 
     }
 
-    if _, err := os.Stat(fname); os.IsNotExist(err) {
-        // file does not exist; should return FileDoesNotExistError?
-        return false, nil
-    } else {
-        return true, nil
+    dfsFile := DFSFileStruct{
+        Name: fname,
     }
+    err = c.clientToServerRpc.Call("Server.DoesFileExist", dfsFile, &exists)
+    CheckError("Error in checking if file exists globally: ", err)
+
+    return exists, err
 }
 
  func (c Client) Open(fname string, mode FileMode) (f DFSFile, err error) {
      if isBadFileName(fname) {
          return nil, BadFilenameError(fname)
      }
-     dfsFileStruct := DFSFileStruct{
-         name: fname,
-         mode: mode,
-     }
-     doesFileExist, err := c.GlobalFileExists(fname)
-     if !doesFileExist {
-         _, err := os.Create(fname)
-
-         CheckError("Error in creating the file: ", err)
-     }
-     if mode == READ {
-         file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
-         CheckError("Error in opening the file for READ: ", err)
-         dfsFileStruct.file = *file
+     fileExistsLocally, _ := c.LocalFileExists(fname)
+     fileExistsGlobally, _ := c.GlobalFileExists(fname)
+     if fileExistsLocally || fileExistsGlobally {
+         if mode == READ {
+             file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
+             CheckError("Error in opening the file for READ: ", err)
+             f := c.Files[fname]
+             f.file = *file
+         } else if mode == WRITE {
+             file, err := os.OpenFile(fname, os.O_RDWR, 0666)
+             CheckError("Error in opening the file for WRITE: ", err)
+             f := c.Files[fname]
+             f.file = *file
+         } else if mode == DREAD {
+             file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
+             CheckError("Error in opening the file for DREAD: ", err)
+             f := c.Files[fname]
+             f.file = *file
+         }
+         return f, nil
+     } else if mode == READ {
+         return nil, FileUnavailableError(fname)
      } else if mode == WRITE {
-         file, err := os.OpenFile(fname, os.O_RDWR, 0666)
-         CheckError("Error in opening the file for WRITE: ", err)
-         dfsFileStruct.file = *file
-     } else if mode == DREAD {
-         file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
-         CheckError("Error in opening the file for DREAD: ", err)
-         dfsFileStruct.file = *file
+         file, err := os.Create(fname)
+         CheckError("Error in creating the file: ", err)
+         dfsFileStruct := DFSFileStruct{
+             Name: fname,
+             file: *file,
+             mode: mode,
+         }
+         c.Files[fname] = dfsFileStruct
+         return c.Files[fname], nil
      }
 
-
-     return dfsFileStruct, nil
+     return nil, nil
  }
 
 func (c Client) UMountDFS() (err error) {
-    //var reply Client.IsConnected
-    rServerConn.Call("Server.UnregisterClient", c, &c)
-    rServerConn.Close()
+    var isConnected bool
+    c.clientToServerRpc.Call("Server.UnregisterClient", c, &isConnected)
+    c.IsConnected = isConnected
+    c.clientToServerRpc.Close()
+    // Loop through every file a client has and close it
+    for _, dfsFile := range c.Files {
+        dfsFile.file.Close()
+    }
 
     return nil
 }
@@ -347,10 +367,9 @@ func Beat(sAddr string, msg string) {
 // - Networking errors related to localIP or serverAddr
 func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err error) {
     // TODO
-    localIP = localIP + ":5055"
+    localIP = localIP + ":0"
     client := Client{
-        rpcConnection: rServerConn,
-        Ip: localIP,
+        Files: make(map[string]DFSFileStruct),
         LocalPath: localPath,
     }
 
@@ -358,6 +377,8 @@ func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err
     CheckError("Error in resolving serverAddr in MountDFS: ", err)
     rpcConn, err := net.ListenTCP("tcp", conn)
     CheckError("Error in setting up server-client rpc in MountDFS: ", err)
+    clientIP := rpcConn.Addr()
+    client.Ip = clientIP.String()
 
     rpc.Register(client)
     go rpc.Accept(rpcConn)
@@ -365,6 +386,7 @@ func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err
     // Connect to server
     rServerConn, err := rpc.Dial("tcp", serverAddr)
     CheckError("Dialing the server: ", err)
+    client.clientToServerRpc = rServerConn
 
     var id string
     err = rServerConn.Call("Server.RegisterClient", client, &id)

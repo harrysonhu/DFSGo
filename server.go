@@ -11,15 +11,19 @@ import (
 	"strconv"
 )
 
+var rpcConn *rpc.Client
+
 type Client struct {
-	rpcConnection *rpc.Client
+	clientToServerRpc *rpc.Client
+	Files map[string]dfslib.DFSFileStruct
+	Ip string
 	Id string
 	LocalPath string
 	IsConnected bool
 }
 
 type Server struct {
-	RegisteredClients map [string]Client
+	RegisteredClients map[string]Client
 }
 
 func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
@@ -27,9 +31,11 @@ func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
 
 	rpcConn, err := rpc.Dial("tcp", client.Ip)
 	dfslib.CheckError("Error in setting up server to client rpc connection in RegisterClient: ", err)
-
+	client.IsConnected = true
 	serverClient := Client{
-		rpcConnection: rpcConn,
+		clientToServerRpc: rpcConn,
+		Files: client.Files,
+		Ip: client.Ip,
 		Id: *id,
 		LocalPath: client.LocalPath,
 		IsConnected: true,
@@ -40,7 +46,23 @@ func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
 }
 
 func (s *Server) UnregisterClient(client *dfslib.Client, isConnected *bool) error {
+	c := s.RegisteredClients[client.Id]
+	c.clientToServerRpc.Close()
+	c.IsConnected = false
 	*isConnected = false
+	return nil
+}
+
+func (s *Server) DoesFileExist(dfsFile *dfslib.DFSFileStruct, exists *bool) error {
+	for _, client := range s.RegisteredClients {
+		for _, v := range client.Files {
+			if v.Name == dfsFile.Name && client.IsConnected {
+				*exists = true
+				return nil
+			}
+		}
+	}
+	*exists = false
 	return nil
 }
 
