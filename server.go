@@ -24,6 +24,7 @@ type Client struct {
 
 type Server struct {
 	RegisteredClients map[string]Client
+	fileNamesSeen map[string]bool               // Keeps track of all the files that has ever been created
 }
 
 func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
@@ -34,13 +35,12 @@ func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
 	client.IsConnected = true
 	serverClient := Client{
 		clientToServerRpc: rpcConn,
-		Files: client.Files,
-		Ip: client.Ip,
-		Id: *id,
-		LocalPath: client.LocalPath,
-		IsConnected: true,
+		Files:             client.Files,
+		Ip:                client.Ip,
+		Id:                *id,
+		LocalPath:         client.LocalPath,
+		IsConnected:       true,
 	}
-	s.RegisteredClients = make(map[string]Client)
 	s.RegisteredClients[*id] = serverClient
 	return nil
 }
@@ -53,7 +53,7 @@ func (s *Server) UnregisterClient(client *dfslib.Client, isConnected *bool) erro
 	return nil
 }
 
-func (s *Server) DoesFileExist(dfsFile *dfslib.DFSFileStruct, exists *bool) error {
+func (s *Server) DoesFileExistGlobally(dfsFile *dfslib.DFSFileStruct, exists *bool) error {
 	for _, client := range s.RegisteredClients {
 		for _, v := range client.Files {
 			if v.Name == dfsFile.Name && client.IsConnected {
@@ -66,6 +66,21 @@ func (s *Server) DoesFileExist(dfsFile *dfslib.DFSFileStruct, exists *bool) erro
 	return nil
 }
 
+func (s *Server) IsFileCreated(fname string, ans *bool) error {
+	if s.fileNamesSeen[fname] {
+		*ans = true
+		return nil
+	}
+	*ans = false
+	return nil
+}
+
+func (s *Server) AddFileToSeen(fname string, success *bool) error {
+	s.fileNamesSeen[fname] = true
+	*success = true
+	return nil
+}
+
 func main() {
 	args := os.Args[1:]
 	incomingIP := args[0]
@@ -75,10 +90,11 @@ func main() {
 
 	incoming, err := net.ListenTCP("tcp", conn)
 	dfslib.CheckError("ListenTCP for server failed: ", err)
-
 	//handleHeartbeat(incomingIP)
 
 	server := new(Server)
+	server.RegisteredClients = make(map[string]Client)
+	server.fileNamesSeen = make(map[string]bool)
 	rpc.Register(server)
 	go rpc.Accept(incoming)
 

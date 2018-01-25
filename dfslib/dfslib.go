@@ -15,11 +15,6 @@ import (
     "net"
     "time"
     "strings"
-    //"encoding/json"
-    //"encoding/binary"
-    "encoding/json"
-    //"bytes"
-    //"io"
 )
 
 var rServerConn *rpc.Client
@@ -180,7 +175,6 @@ type Client struct {
 type DFSFileStruct struct {
     Name string
     file os.File
-    //content [256]Chunk
     mode FileMode
 }
 
@@ -188,11 +182,11 @@ func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
     if chunkNum < 0 || chunkNum > 255 {
         return ChunkUnavailableError(chunkNum)
     }
-    readBuf := make([]byte, 32)
-    dfs.file.Seek(int64(chunkNum * 32), 0)
-    _, err = dfs.file.Read(readBuf)
+    readBuf := make([]byte, 32, 32)
+    offset := int64(chunkNum * 32)
+    _, err = dfs.file.ReadAt(readBuf, offset)
     CheckError("Error in reading a chunk of a file: ", err)
-    json.Unmarshal(readBuf, *chunk)
+    copy(chunk[:], readBuf[:])
     return nil
 }
 
@@ -200,12 +194,10 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     if dfs.mode == READ || dfs.mode == DREAD {
         return BadFileModeError(dfs.mode)
     }
-    b, err := json.Marshal(*chunk)
-    _, err = dfs.file.Write(b)
+    offset := int64(chunkNum * 32)
+    b := chunk[:]
+    _, err = dfs.file.WriteAt(b, offset)
     CheckError("Error in writing to a file: ", err)
-
-    //json.Unmarshal(b, &dfs.content[chunkNum])
-    //f.content[chunkNum] = *chunk
     return nil
 }
 
@@ -239,7 +231,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
     dfsFile := DFSFileStruct{
         Name: fname,
     }
-    err = c.clientToServerRpc.Call("Server.DoesFileExist", dfsFile, &exists)
+    err = c.clientToServerRpc.Call("Server.DoesFileExistGlobally", dfsFile, &exists)
     CheckError("Error in checking if file exists globally: ", err)
 
     return exists, err
@@ -269,7 +261,16 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
              f.file = *file
          }
          return f, nil
-     } else if mode == READ {
+     }
+
+     //var isFileCreated bool
+     //c.clientToServerRpc.Call("Server.IsFileCreated", fname, &isFileCreated)
+     // If the file has been created before but does not exist locally or globally, throw error
+     //if isFileCreated {
+     //    return nil, FileUnavailableError(fname)
+     //}
+     // TODO: FIX
+     if mode == READ {
          return nil, FileUnavailableError(fname)
      } else if mode == WRITE {
          file, err := os.Create(fname)
@@ -280,6 +281,9 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
              mode: mode,
          }
          c.Files[fname] = dfsFileStruct
+         // Tell the server which files have already been created
+         var addSuccessful bool
+         c.clientToServerRpc.Call("Server.AddFileToSeen", fname, &addSuccessful)
          return c.Files[fname], nil
      }
 
