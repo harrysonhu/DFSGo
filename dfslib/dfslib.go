@@ -178,8 +178,7 @@ type DFSFileStruct struct {
     Name string
     file os.File
     mode FileMode
-    LastChunkWritten int                // This field is used to keep track of
-                                        // which chunk to update on every write of the file
+    LastChunkWritten int
 }
 
 func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
@@ -209,12 +208,9 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     b := chunk[:]
     _, err = dfs.file.WriteAt(b, offset)
     CheckError("Error in writing to a file: ", err)
-    //err = dfs.file.Sync()
-    CheckError("Error in calling Sync() after write: ", err)
 
     dfs.LastChunkWritten = int(chunkNum)
     var success bool
-    //dfsFile := dfs
     dfs.Owner.clientToServerRpc.Call("Server.UpdateChunkVersion", dfs, &success)
     return nil
 }
@@ -260,7 +256,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      }
      fileExistsLocally, _ := c.LocalFileExists(fname)
      fileExistsGlobally, _ := c.GlobalFileExists(fname)
-     if fileExistsLocally || fileExistsGlobally {
+     if fileExistsLocally {
          if mode == READ {
              var updatedFile os.File
              c.clientToServerRpc.Call("Server.GetMostUpdatedFile", c, &updatedFile)
@@ -283,6 +279,10 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
              f.file = *file
          }
          return f, nil
+     }
+
+     if fileExistsGlobally {
+
      }
 
 
@@ -395,8 +395,7 @@ func Beat(sAddr string, msg string) {
 // - Networking errors related to localIP or serverAddr
 func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err error) {
     globalServerAddr = serverAddr
-
-    if _, err := os.Stat("." + localPath); err != nil {
+    if _, err := os.Stat(localPath); err != nil {
         // localPath does not exist
         if os.IsNotExist(err) {
             return nil, LocalPathError(localPath)
@@ -428,7 +427,6 @@ func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err
     err = rServerConn.Call("Server.RegisterClient", client, &id)
     CheckError("RegisterClient error: ", err)
     client.Id = id
-    client.IsConnected = true
 
     // start UDP heartbeat for client
     //GoBeat(serverAddr, client)
