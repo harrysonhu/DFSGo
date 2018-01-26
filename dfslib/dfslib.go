@@ -174,7 +174,8 @@ type Client struct {
 }
 
 type DFSFileStruct struct {
-    //Owner Client
+    connection *rpc.Client
+    //Owner *Client
     Name string
     file os.File
     mode FileMode
@@ -208,6 +209,10 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     b := chunk[:]
     _, err = dfs.file.WriteAt(b, offset)
     CheckError("Error in writing to a file: ", err)
+
+    dfs.LastChunkWritten = int(chunkNum)
+    var success bool
+    dfs.connection.Call("Server.UpdateChunkVersion", dfs, &success)
     return nil
 }
 
@@ -286,6 +291,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          file, err := os.Create(fname)
          CheckError("Error in creating the file: ", err)
          dfsFileStruct := DFSFileStruct{
+             connection: c.clientToServerRpc,
              Name: fname,
              file: *file,
              mode: mode,
@@ -312,6 +318,12 @@ func (c Client) UMountDFS() (err error) {
 
     return nil
 }
+
+//func (c Client) updateChunkVersion(chunkNum uint8, dfsFile DFSFileStruct) {
+//    var success bool
+//    c.clientToServerRpc.Call("Server.UpdateChunkVersion", dfsFile, &success)
+//    fmt.Println("testing")
+//}
 
 func isBadFileName(fname string) bool {
     const alphaNumeric = "abcdefghijklmnopqrstuvwxyz0123456789"
