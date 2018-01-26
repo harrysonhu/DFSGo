@@ -34,11 +34,10 @@ type Server struct {
 }
 
 func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
-	*id = client.LocalPath + strconv.Itoa(rand.Intn(100))
+	*id = client.LocalPath + strconv.Itoa(rand.Intn(500))
 
 	rpcConn, err := rpc.Dial("tcp", client.Ip)
 	dfslib.CheckError("Error in setting up server to client rpc connection in RegisterClient: ", err)
-	client.IsConnected = true
 	serverClient := Client{
 		clientToServerRpc: rpcConn,
 		Files:             client.Files,
@@ -88,7 +87,7 @@ func (s *Server) AddFileToSeen(fname string, success *bool) error {
 }
 
 func (s *Server) UpdateChunkVersion(dfsFile *dfslib.DFSFileStruct, success *bool) error {
-	// Get the metadata associaed with the file
+	// Get the metadata associated with the file
 	fileMetadata := s.files[dfsFile.Name]
 	chunkNum := dfsFile.LastChunkWritten
 
