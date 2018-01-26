@@ -18,7 +18,6 @@ import (
 )
 
 var rServerConn *rpc.Client
-var globalServerAddr string
 
 // A Chunk is the unit of reading/writing in DFS.
 type Chunk [32]byte
@@ -174,19 +173,14 @@ type Client struct {
 }
 
 type DFSFileStruct struct {
-    Owner Client
     Name string
     file os.File
     mode FileMode
-    LastChunkWritten int
 }
 
 func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
     if chunkNum < 0 || chunkNum > 255 {
         return ChunkUnavailableError(chunkNum)
-    }
-    if (dfs.mode == READ || dfs.mode == WRITE) && dfs.Owner.IsConnected == false {
-        return DisconnectedError(globalServerAddr)
     }
     readBuf := make([]byte, 32, 32)
     offset := int64(chunkNum * 32)
@@ -200,18 +194,10 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     if dfs.mode == READ || dfs.mode == DREAD {
         return BadFileModeError(dfs.mode)
     }
-    // Can't write to file if the client that owns the file is disconnected
-    if (dfs.mode == READ || dfs.mode == WRITE) && dfs.Owner.IsConnected == false {
-        return DisconnectedError(globalServerAddr)
-    }
     offset := int64(chunkNum * 32)
     b := chunk[:]
     _, err = dfs.file.WriteAt(b, offset)
     CheckError("Error in writing to a file: ", err)
-
-    dfs.LastChunkWritten = int(chunkNum)
-    var success bool
-    dfs.Owner.clientToServerRpc.Call("Server.UpdateChunkVersion", dfs, &success)
     return nil
 }
 
@@ -236,6 +222,7 @@ func (c Client) LocalFileExists(fname string) (exists bool, err error) {
     return false, nil
 }
 
+// What's the difference between this method and localFileExists??
 func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
     if isBadFileName(fname) {
         return false, BadFilenameError(fname) 
@@ -256,17 +243,12 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      }
      fileExistsLocally, _ := c.LocalFileExists(fname)
      fileExistsGlobally, _ := c.GlobalFileExists(fname)
-     if fileExistsLocally {
+     if fileExistsLocally || fileExistsGlobally {
          if mode == READ {
-             var updatedFile os.File
-             c.clientToServerRpc.Call("Server.GetMostUpdatedFile", c, &updatedFile)
+             file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
+             CheckError("Error in opening the file for READ: ", err)
              f := c.Files[fname]
-             f.file = updatedFile
-             f.mode = mode
-
-             //file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
-             //CheckError("Error in opening the file for READ: ", err)
-             //f.file = *file
+             f.file = *file
          } else if mode == WRITE {
              file, err := os.OpenFile(fname, os.O_RDWR, 0666)
              CheckError("Error in opening the file for WRITE: ", err)
@@ -281,11 +263,6 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          return f, nil
      }
 
-     if fileExistsGlobally {
-
-     }
-
-
      //var isFileCreated bool
      //c.clientToServerRpc.Call("Server.IsFileCreated", fname, &isFileCreated)
      // If the file has been created before but does not exist locally or globally, throw error
@@ -296,10 +273,9 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      if mode == READ {
          return nil, FileUnavailableError(fname)
      } else if mode == WRITE {
-         file, err := os.Create("." + c.LocalPath + fname)
+         file, err := os.Create(fname)
          CheckError("Error in creating the file: ", err)
          dfsFileStruct := DFSFileStruct{
-             Owner: c,
              Name: fname,
              file: *file,
              mode: mode,
@@ -394,14 +370,7 @@ func Beat(sAddr string, msg string) {
 // - LocalPathError
 // - Networking errors related to localIP or serverAddr
 func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err error) {
-    globalServerAddr = serverAddr
-    if _, err := os.Stat(localPath); err != nil {
-        // localPath does not exist
-        if os.IsNotExist(err) {
-            return nil, LocalPathError(localPath)
-        }
-    }
-
+    // TODO
     localIP = localIP + ":0"
     client := Client{
         Files: make(map[string]DFSFileStruct),
