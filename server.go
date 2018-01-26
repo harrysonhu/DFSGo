@@ -32,7 +32,6 @@ func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
 
 	rpcConn, err := rpc.Dial("tcp", client.Ip)
 	dfslib.CheckError("Error in setting up server to client rpc connection in RegisterClient: ", err)
-	client.IsConnected = true
 	serverClient := Client{
 		clientToServerRpc: rpcConn,
 		Files:             client.Files,

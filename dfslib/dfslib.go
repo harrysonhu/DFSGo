@@ -18,6 +18,7 @@ import (
 )
 
 var rServerConn *rpc.Client
+var globalServerAddr string
 
 // A Chunk is the unit of reading/writing in DFS.
 type Chunk [32]byte
@@ -173,15 +174,20 @@ type Client struct {
 }
 
 type DFSFileStruct struct {
+    //Owner Client
     Name string
     file os.File
     mode FileMode
+    LastChunkWritten int
 }
 
 func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
     if chunkNum < 0 || chunkNum > 255 {
         return ChunkUnavailableError(chunkNum)
     }
+    //if (dfs.mode == READ || dfs.mode == WRITE) && dfs.Owner.IsConnected == false {
+    //    return DisconnectedError(globalServerAddr)
+    //}
     readBuf := make([]byte, 32, 32)
     offset := int64(chunkNum * 32)
     _, err = dfs.file.ReadAt(readBuf, offset)
@@ -194,6 +200,10 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     if dfs.mode == READ || dfs.mode == DREAD {
         return BadFileModeError(dfs.mode)
     }
+    // Can't write to file if the client that owns the file is disconnected
+    //if (dfs.mode == READ || dfs.mode == WRITE) && dfs.Owner.IsConnected == false {
+    //    return DisconnectedError(globalServerAddr)
+    //}
     offset := int64(chunkNum * 32)
     b := chunk[:]
     _, err = dfs.file.WriteAt(b, offset)
@@ -370,7 +380,14 @@ func Beat(sAddr string, msg string) {
 // - LocalPathError
 // - Networking errors related to localIP or serverAddr
 func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err error) {
-    // TODO
+    globalServerAddr = serverAddr
+    if _, err := os.Stat("." + localPath); err != nil {
+        // localPath does not exist
+        if os.IsNotExist(err) {
+            return nil, LocalPathError(localPath)
+        }
+    }
+
     localIP = localIP + ":0"
     client := Client{
         Files: make(map[string]DFSFileStruct),
@@ -396,6 +413,7 @@ func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err
     err = rServerConn.Call("Server.RegisterClient", client, &id)
     CheckError("RegisterClient error: ", err)
     client.Id = id
+    client.IsConnected = true
 
     // start UDP heartbeat for client
     //GoBeat(serverAddr, client)
