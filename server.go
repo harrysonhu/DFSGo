@@ -82,19 +82,21 @@ func (s *Server) IsFileCreated(fname string, ans *bool) error {
 
 func (s *Server) AddFileToSeen(fname string, success *bool) error {
 	s.fileNamesSeen[fname] = true
+	s.files[fname] = MetadataObj{}
 	*success = true
 	return nil
 }
 
 func (s *Server) UpdateChunkVersion(dfsFile *dfslib.DFSFileStruct, success *bool) error {
-	// Get the metadata associaed with the file
+	// Get the metadata associated with the file
 	fileMetadata := s.files[dfsFile.Name]
 	chunkNum := dfsFile.LastChunkWritten
 
 	// Increment the version number of the appropriate chunk
 	fileMetadata.chunkVersionNum[chunkNum]++
 	// Set the chunk's owner to be the file that last wrote to it
-	//fileMetadata.owner = dfsFile.Owner.Id
+	fileMetadata.owner = dfsFile.Owner
+	s.files[dfsFile.Name] = fileMetadata
 	*success = true
 	return nil
 }
@@ -149,6 +151,7 @@ func main() {
 	server := new(Server)
 	server.RegisteredClients = make(map[string]Client)
 	server.fileNamesSeen = make(map[string]bool)
+	server.files = make(map[string]MetadataObj)
 	rpc.Register(server)
 	go rpc.Accept(incoming)
 

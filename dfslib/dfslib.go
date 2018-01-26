@@ -175,7 +175,7 @@ type Client struct {
 
 type DFSFileStruct struct {
     connection *rpc.Client
-    //Owner *Client
+    Owner string                     // Owner of the file is the client Id
     Name string
     file os.File
     mode FileMode
@@ -292,6 +292,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          CheckError("Error in creating the file: ", err)
          dfsFileStruct := DFSFileStruct{
              connection: c.clientToServerRpc,
+             Owner: c.Id,
              Name: fname,
              file: *file,
              mode: mode,
