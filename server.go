@@ -16,6 +16,8 @@ var rpcConn *rpc.Client
 type MetadataObj struct {
 	chunkVersionNum [256]int					// The index position indicates the chunk #
 	owner string								// stores the client Id to identify the owner
+	chunks [256]dfslib.Chunk
+	writtenTo bool
 }
 
 type Client struct {
@@ -99,7 +101,9 @@ func (s *Server) LinkFileToClient(dfsFile dfslib.DFSFileStruct, success *bool) e
 func (s *Server) UpdateChunkVersion(dfsFile *dfslib.DFSFileStruct, success *bool) error {
 	// Get the metadata associated with the file
 	fileMetadata := s.files[dfsFile.Name]
+	fileMetadata.writtenTo = true
 	chunkNum := dfsFile.LastChunkWritten
+	fileMetadata.chunks[chunkNum] = dfsFile.Chunks[chunkNum]
 
 	// Increment the version number of the appropriate chunk
 	fileMetadata.chunkVersionNum[chunkNum]++
@@ -111,30 +115,20 @@ func (s *Server) UpdateChunkVersion(dfsFile *dfslib.DFSFileStruct, success *bool
 }
 
 // This function loops through every file to find the latest versions of each chunk,
-// creates a file with these chunks written into it, and returns it back to the client
-func (s *Server) GetMostUpdatedFile(c dfslib.Client, answer *os.File) error {
-	var file os.File
+// and returns an array of latest versions for each chunk of a file
+func (s *Server) GetMostUpdatedFile(c dfslib.Client, chunkMap *map[int]dfslib.Chunk) error {
 	var chunkVersions [256]int
 	// Loop through all files on the server and for each file, loop through all 256 chunks.
 	// For each chunk, check the version against the new file's version.
 	// If the version is newer, overwrite the new file's chunk with the most up to date version
-	for fname, obj := range s.files {
+	for _, obj := range s.files {
 		for i := 0; i < 256; i++ {
 			if obj.chunkVersionNum[i] > chunkVersions[i] {
 				owner := s.RegisteredClients[obj.owner]
 
 				// Check if owner is even connected first before fetching
 				if owner.IsConnected {
-					fileWithLatestChunkVersion := owner.Files[fname]
-					var chunk dfslib.Chunk
-					// Read the chunk from the file that owns the latest version of it
-					fileWithLatestChunkVersion.Read(uint8(i), &chunk)
-
-					offset := int64(i * 32)
-					b := chunk[:]
-					// Write the latest chunk into the file at the right offset
-					_, err := file.WriteAt(b, offset)
-					dfslib.CheckError("Error in GetMostUpdatedFile: ", err)
+					(*chunkMap)[i] = obj.chunks[i]
 
 					chunkVersions[i] = obj.chunkVersionNum[i]
 				}
@@ -142,7 +136,12 @@ func (s *Server) GetMostUpdatedFile(c dfslib.Client, answer *os.File) error {
 		}
 	}
 
-	*answer = file
+	return nil
+}
+
+func (s *Server) HasFileBeenWrittenTo(fname string, answer *bool) error {
+	fileMetadataObj := s.files[fname]
+	*answer = fileMetadataObj.writtenTo
 	return nil
 }
 

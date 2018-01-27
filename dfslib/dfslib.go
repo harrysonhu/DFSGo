@@ -180,6 +180,7 @@ type DFSFileStruct struct {
     file os.File
     mode FileMode
     LastChunkWritten int
+    Chunks [256]Chunk
 }
 
 func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
@@ -210,6 +211,7 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     //b := make([]byte, 32, 32)
     b := chunk[:]
     n, err := dfs.file.WriteAt(b, offset)
+    dfs.Chunks[chunkNum] = *chunk
     CheckError("Error in writing to a file: ", err)
     fmt.Printf("wrote %d bytes\n", n)
     dfs.file.Sync()
@@ -262,7 +264,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      }
      fileExistsLocally, _ := c.LocalFileExists(fname)
      fileExistsGlobally, _ := c.GlobalFileExists(fname)
-     if fileExistsLocally || fileExistsGlobally {
+     if fileExistsLocally {
          if mode == READ {
              file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
              CheckError("Error in opening the file for READ: ", err)
@@ -282,41 +284,42 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          return f, nil
      }
 
-     //var isFileCreated bool
-     //c.clientToServerRpc.Call("Server.IsFileCreated", fname, &isFileCreated)
-     // If the file has been created before but does not exist locally or globally, throw error
-     //if isFileCreated {
-     //    return nil, FileUnavailableError(fname)
-     //}
-     // TODO: FIX
-     if mode == READ {
-         return nil, FileUnavailableError(fname)
-     } else if mode == WRITE {
-         file, err := os.Create(fname + ".dfs")
-
-         array := make([]byte, 8192, 8192)
-         initialWrite := array[:]
-         n, err := file.Write(initialWrite)
-         fmt.Printf("wrote %d bytes\n", n)
-
-         CheckError("Error in creating the file: ", err)
-         dfsFileStruct := DFSFileStruct{
-             connection: c.clientToServerRpc,
-             Owner: c.Id,
-             Name: fname,
-             file: *file,
-             mode: mode,
+     var chunkMap map[int]Chunk
+     if fileExistsGlobally {
+         c.clientToServerRpc.Call("Server.GetMostUpdatedFile", c, &chunkMap)
+         var writtenTo bool
+         c.clientToServerRpc.Call("Server.HasFileBeenWrittenTo", fname, &writtenTo)
+         // Check if file is trivial (each chunk version in chunkMap is 0 if len(chunkMap) is 0)
+         if len(chunkMap) == 0 {
+             if writtenTo {
+                 // The file exists globally, is not trivial,
+                 // but the server is unable to download a copy of it,
+                 // so return FileUnavailableError
+                 return nil, FileUnavailableError(fname)
+             } else {
+                 f = createFile(c, fname, mode)
+                 return f, nil
+             }
          }
-         c.Files[fname] = dfsFileStruct
-         // Tell the server which files have already been created
-         var addSuccessful bool
-         c.clientToServerRpc.Call("Server.AddFileToSeen", fname, &addSuccessful)
-         var linkSuccessful bool
-         c.clientToServerRpc.Call("Server.LinkFileToClient", dfsFileStruct, &linkSuccessful)
-         return c.Files[fname], nil
+         fname = fname + ".dfs"
+		 file, err := os.OpenFile(fname, os.O_RDWR, 0666)
+		 CheckError("Error in downloading a non-trivial file from server and opening it: ", err)
+         for chunkNum, chunk := range chunkMap {
+             offset := chunkNum * 32
+             b := chunk[:]
+             file.WriteAt(b, int64(offset))
+         }
+         // Get the DFSFileStruct from the map
+         f := c.Files[fname]
+         f.connection = c.clientToServerRpc
+         f.Owner = c.Id
+         f.Name = fname
+         f.file = *file
+         f.mode = mode
+         return f, nil
      }
-
-     return nil, nil
+     f = createFile(c, fname, mode)
+     return f, nil
  }
 
 func (c Client) UMountDFS() (err error) {
@@ -332,6 +335,31 @@ func (c Client) UMountDFS() (err error) {
     return nil
 }
 
+func createFile (c Client, fname string, mode FileMode) DFSFile {
+    // If file doesn't exist globally or locally, create it here
+    file, err := os.Create(fname + ".dfs")
+
+    array := make([]byte, 8192, 8192)
+    initialWrite := array[:]
+    n, err := file.Write(initialWrite)
+    fmt.Printf("wrote %d bytes\n", n)
+
+    CheckError("Error in creating the file: ", err)
+    dfsFileStruct := DFSFileStruct{
+        connection: c.clientToServerRpc,
+        Owner: c.Id,
+        Name: fname,
+        file: *file,
+        mode: mode,
+    }
+    c.Files[fname] = dfsFileStruct
+    // Tell the server which files have already been created
+    var addSuccessful bool
+    c.clientToServerRpc.Call("Server.AddFileToSeen", fname, &addSuccessful)
+    var linkSuccessful bool
+    c.clientToServerRpc.Call("Server.LinkFileToClient", dfsFileStruct, &linkSuccessful)
+    return c.Files[fname]
+}
 //func (c Client) updateChunkVersion(chunkNum uint8, dfsFile DFSFileStruct) {
 //    var success bool
 //    c.clientToServerRpc.Call("Server.UpdateChunkVersion", dfsFile, &success)
