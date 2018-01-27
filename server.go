@@ -62,7 +62,7 @@ func (s *Server) UnregisterClient(client *dfslib.Client, isConnected *bool) erro
 func (s *Server) DoesFileExistGlobally(dfsFile *dfslib.DFSFileStruct, exists *bool) error {
 	for _, client := range s.RegisteredClients {
 		for _, v := range client.Files {
-			if v.Name == dfsFile.Name && client.IsConnected {
+			if v.Name == dfsFile.Name {
 				*exists = true
 				return nil
 			}

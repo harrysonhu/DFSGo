@@ -293,6 +293,12 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          return nil, FileUnavailableError(fname)
      } else if mode == WRITE {
          file, err := os.Create(fname + ".dfs")
+
+         array := make([]byte, 8192, 8192)
+         initialWrite := array[:]
+         n, err := file.Write(initialWrite)
+         fmt.Printf("wrote %d bytes\n", n)
+
          CheckError("Error in creating the file: ", err)
          dfsFileStruct := DFSFileStruct{
              connection: c.clientToServerRpc,
