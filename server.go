@@ -54,6 +54,7 @@ func (s *Server) UnregisterClient(client *dfslib.Client, isConnected *bool) erro
 	c := s.RegisteredClients[client.Id]
 	c.clientToServerRpc.Close()
 	c.IsConnected = false
+	s.RegisteredClients[client.Id] = c
 	*isConnected = false
 	return nil
 }
@@ -85,6 +86,14 @@ func (s *Server) AddFileToSeen(fname string, success *bool) error {
 	s.files[fname] = MetadataObj{}
 	*success = true
 	return nil
+}
+
+func (s *Server) LinkFileToClient(dfsFile dfslib.DFSFileStruct, success *bool) error {
+	c := s.RegisteredClients[dfsFile.Owner]
+	c.Files[dfsFile.Name] = dfsFile
+	*success = true
+	return nil
+
 }
 
 func (s *Server) UpdateChunkVersion(dfsFile *dfslib.DFSFileStruct, success *bool) error {

@@ -205,10 +205,14 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     //if (dfs.mode == READ || dfs.mode == WRITE) && dfs.Owner.IsConnected == false {
     //    return DisconnectedError(globalServerAddr)
     //}
+
     offset := int64(chunkNum * 32)
+    //b := make([]byte, 32, 32)
     b := chunk[:]
-    _, err = dfs.file.WriteAt(b, offset)
+    n, err := dfs.file.WriteAt(b, offset)
     CheckError("Error in writing to a file: ", err)
+    fmt.Printf("wrote %d bytes\n", n)
+    dfs.file.Sync()
 
     dfs.LastChunkWritten = int(chunkNum)
     var success bool
@@ -288,7 +292,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      if mode == READ {
          return nil, FileUnavailableError(fname)
      } else if mode == WRITE {
-         file, err := os.Create(fname)
+         file, err := os.Create(fname + ".dfs")
          CheckError("Error in creating the file: ", err)
          dfsFileStruct := DFSFileStruct{
              connection: c.clientToServerRpc,
@@ -301,6 +305,8 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          // Tell the server which files have already been created
          var addSuccessful bool
          c.clientToServerRpc.Call("Server.AddFileToSeen", fname, &addSuccessful)
+         var linkSuccessful bool
+         c.clientToServerRpc.Call("Server.LinkFileToClient", dfsFileStruct, &linkSuccessful)
          return c.Files[fname], nil
      }
 
