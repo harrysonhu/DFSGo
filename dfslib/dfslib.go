@@ -208,7 +208,6 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     //}
 
     offset := int64(chunkNum * 32)
-    //b := make([]byte, 32, 32)
     b := chunk[:]
     n, err := dfs.file.WriteAt(b, offset)
     dfs.Chunks[chunkNum] = *chunk
@@ -243,7 +242,6 @@ func (c Client) LocalFileExists(fname string) (exists bool, err error) {
     return false, nil
 }
 
-// What's the difference between this method and localFileExists??
 func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
     if isBadFileName(fname) {
         return false, BadFilenameError(fname) 
@@ -360,11 +358,6 @@ func createFile (c Client, fname string, mode FileMode) DFSFile {
     c.clientToServerRpc.Call("Server.LinkFileToClient", dfsFileStruct, &linkSuccessful)
     return c.Files[fname]
 }
-//func (c Client) updateChunkVersion(chunkNum uint8, dfsFile DFSFileStruct) {
-//    var success bool
-//    c.clientToServerRpc.Call("Server.UpdateChunkVersion", dfsFile, &success)
-//    fmt.Println("testing")
-//}
 
 func isBadFileName(fname string) bool {
     const alphaNumeric = "abcdefghijklmnopqrstuvwxyz0123456789"
