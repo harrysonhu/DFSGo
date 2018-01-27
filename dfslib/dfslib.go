@@ -187,9 +187,10 @@ func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
     if chunkNum < 0 || chunkNum > 255 {
         return ChunkUnavailableError(chunkNum)
     }
-    //if (dfs.mode == READ || dfs.mode == WRITE) && dfs.Owner.IsConnected == false {
-    //    return DisconnectedError(globalServerAddr)
-    //}
+    // Can't read in READ mode if the client is disconnected
+    if (dfs.mode == READ || dfs.mode == WRITE) && dfs.isClientConnected(dfs.Owner) == false {
+        return DisconnectedError(globalServerAddr)
+    }
     readBuf := make([]byte, 32, 32)
     offset := int64(chunkNum * 32)
     _, err = dfs.file.ReadAt(readBuf, offset)
@@ -202,10 +203,10 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
     if dfs.mode == READ || dfs.mode == DREAD {
         return BadFileModeError(dfs.mode)
     }
-    // Can't write to file if the client that owns the file is disconnected
-    //if (dfs.mode == READ || dfs.mode == WRITE) && dfs.Owner.IsConnected == false {
-    //    return DisconnectedError(globalServerAddr)
-    //}
+    // Can't write in WRITE mode if the client is disconnected
+    if (dfs.mode == READ || dfs.mode == WRITE) && dfs.isClientConnected(dfs.Owner) == false {
+        return DisconnectedError(globalServerAddr)
+    }
 
     offset := int64(chunkNum * 32)
     b := chunk[:]
@@ -371,6 +372,12 @@ func isBadFileName(fname string) bool {
         }
     }
     return false
+}
+
+func (dfs DFSFileStruct) isClientConnected(clientId string) bool {
+    var isConnected bool
+    dfs.connection.Call("Server.IsClientConnected", clientId, &isConnected)
+	return isConnected;
 }
 
 func GoBeat(sAddr string, c Client) {
