@@ -150,6 +150,21 @@ func (s *Server) GetMostUpdatedFile(c dfslib.Client, chunkMap *map[int]dfslib.Ch
 	return nil
 }
 
+func (s *Server) GetSomeVersionOfFile(fname string, file *dfslib.DFSFileStruct) error {
+	// Loop through every client and the list of files each has
+	// If one of them has a file that matches the fname, and the client is still connected
+	// return it
+	for _, client := range s.RegisteredClients {
+		for fileName, f := range client.Files {
+			if fileName == fname && client.IsConnected {
+				*file = f
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
 func (s *Server) HasFileBeenWrittenTo(fname string, answer *bool) error {
 	fileMetadataObj := s.files[fname]
 	*answer = fileMetadataObj.writtenTo

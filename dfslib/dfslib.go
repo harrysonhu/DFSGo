@@ -312,39 +312,64 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      }
 
      fileExistsGlobally, _ := c.GlobalFileExists(fname)
-     var chunkMap map[int]Chunk
+     //var chunkMap map[int]Chunk
      if fileExistsGlobally {
-         c.clientToServerRpc.Call("Server.GetMostUpdatedFile", c, &chunkMap)
          var writtenTo bool
          c.clientToServerRpc.Call("Server.HasFileBeenWrittenTo", fname, &writtenTo)
-         // Check if file is trivial (each chunk version in chunkMap is 0 if len(chunkMap) is 0)
-         if len(chunkMap) == 0 {
-             if writtenTo {
-                 // The file exists globally, is not trivial,
-                 // but the server is unable to download a copy of it,
-                 // so return FileUnavailableError
+         var bestEffortFile DFSFileStruct
+         // Open is a best effort approach
+         c.clientToServerRpc.Call("Server.GetSomeVersionOfFile", fname, &bestEffortFile)
+         if writtenTo {
+             // Not trivial file anymore
+             if bestEffortFile.Name != fname {
                  return nil, FileUnavailableError(fname)
-             } else {
-                 f = createFile(c, fname, mode)
-                 return f, nil
              }
+             file, err := os.OpenFile(fname + ".dfs", os.O_RDWR, 0666)
+             CheckError("Error in opening the best effort file in Open(): ", err)
+             bestEffortFile.connection = c.clientToServerRpc
+             bestEffortFile.file = *file
+             bestEffortFile.mode = mode
+             c.Files[fname] = bestEffortFile
+             return bestEffortFile, nil
+         } else {
+             f = createFile(c, fname, mode)
+             return f, nil
          }
-		 file, err := os.OpenFile(fname + ".dfs", os.O_RDWR, 0666)
-		 CheckError("Error in downloading a non-trivial file from server and opening it: ", err)
-         for chunkNum, chunk := range chunkMap {
-             offset := chunkNum * 32
-             b := chunk[:]
-             file.WriteAt(b, int64(offset))
-         }
-         // Get the DFSFileStruct from the map
-         f := c.Files[fname]
-         f.connection = c.clientToServerRpc
-         f.Owner = c.Id
-         f.Name = fname
-         f.file = *file
-         f.mode = mode
-         c.Files[fname] = f
-         return f, nil
+
+
+         //c.clientToServerRpc.Call("Server.GetMostUpdatedFile", c, &chunkMap)
+         //var writtenTo bool
+         //c.clientToServerRpc.Call("Server.HasFileBeenWrittenTo", fname, &writtenTo)
+         //// Check if file is trivial (each chunk version in chunkMap is 0 if len(chunkMap) is 0)
+         //if len(chunkMap) == 0 {
+         //    if writtenTo {
+         //        // The file exists globally, is not trivial,
+         //        // but the server is unable to download a copy of it,
+         //        // so return FileUnavailableError
+         //        return nil, FileUnavailableError(fname)
+         //    } else {
+         //        f = createFile(c, fname, mode)
+         //        return f, nil
+         //    }
+         //}
+
+
+		 //file, err := os.OpenFile(fname + ".dfs", os.O_RDWR, 0666)
+		 //CheckError("Error in downloading a non-trivial file from server and opening it: ", err)
+         //for chunkNum, chunk := range chunkMap {
+         //    offset := chunkNum * 32
+         //    b := chunk[:]
+         //    file.WriteAt(b, int64(offset))
+         //}
+         //// Get the DFSFileStruct from the map
+         //f := c.Files[fname]
+         //f.connection = c.clientToServerRpc
+         //f.Owner = c.Id
+         //f.Name = fname
+         //f.file = *file
+         //f.mode = mode
+         //c.Files[fname] = f
+         //return f, nil
      }
      f = createFile(c, fname, mode)
      return f, nil
