@@ -125,31 +125,6 @@ func (s *Server) UpdateChunkVersion(dfsFile *dfslib.DFSFileStruct, success *bool
 	return nil
 }
 
-// This function loops through every file to find the latest versions of each chunk,
-// and returns an array of latest versions for each chunk of a file
-func (s *Server) GetMostUpdatedFile(c dfslib.Client, chunkMap *map[int]dfslib.Chunk) error {
-	var chunkVersions [256]int
-	// Loop through all files on the server and for each file, loop through all 256 chunks.
-	// For each chunk, check the version against the new file's version.
-	// If the version is newer, overwrite the new file's chunk with the most up to date version
-	for _, obj := range s.files {
-		for i := 0; i < 256; i++ {
-			if obj.chunkVersionNum[i] > chunkVersions[i] {
-				owner := s.RegisteredClients[obj.owner]
-
-				// Check if owner is even connected first before fetching
-				if owner.IsConnected {
-					(*chunkMap)[i] = obj.chunks[i]
-
-					chunkVersions[i] = obj.chunkVersionNum[i]
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 func (s *Server) GetMostUpdatedChunk(args dfslib.FileChunk, answer *dfslib.Chunk) error {
 	maxVersion := 0
 	maxPossibleVersion := 0
@@ -178,25 +153,6 @@ func (s *Server) GetMostUpdatedChunk(args dfslib.FileChunk, answer *dfslib.Chunk
 		return dfslib.ChunkUnavailableError(args.ChunkNum)
 	}
 	return nil
-	//for _, obj := range s.files {
-	//	owner := s.RegisteredClients[obj.owner]
-	//	if obj.chunkVersionNum[int(chunkNum)] > maxPossibleVersion {
-	//		// Figure out the max version ever for a chunk, whether or not
-	//		// the client is still connected
-	//		maxPossibleVersion = obj.chunkVersionNum[int(chunkNum)]
-	//	}
-	//	// For a given file's metadata object, if the file has chunkNum with
-	//	// a newer version than the current max, and the client is still connected,
-	//	// then we want to return that chunk
-	//	if owner.IsConnected && obj.chunkVersionNum[int(chunkNum)] >= maxVersion {
-	//		*answer = obj.chunks[int(chunkNum)]
-	//		maxVersion = obj.chunkVersionNum[int(chunkNum)]
-	//	}
-	//}
-	//if maxVersion < maxPossibleVersion {
-	//	return dfslib.ChunkUnavailableError(chunkNum)
-	//}
-	//return nil
 }
 
 func (s *Server) GetSomeVersionOfFile(fname string, file *dfslib.DFSFileStruct) error {
