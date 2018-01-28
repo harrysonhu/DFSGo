@@ -223,6 +223,9 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
 }
 
 func (dfs DFSFileStruct) Close() (err error) {
+    if (dfs.mode == READ || dfs.mode == WRITE) && dfs.isClientConnected(dfs.Owner) == false {
+        return DisconnectedError(globalServerAddr)
+    }
     if dfs.mode == WRITE {
         var success bool
         dfs.connection.Call("Server.ReleaseWriteLock", dfs.Name, &success)
@@ -251,6 +254,10 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
     if isBadFileName(fname) {
         return false, BadFilenameError(fname) 
     }
+    // if client is not even connected, there's no need to check if file exists globally
+    if c.IsConnected == false {
+        return false, DisconnectedError(globalServerAddr)
+    }
 
     dfsFile := DFSFileStruct{
         Name: fname,
@@ -264,6 +271,11 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
  func (c Client) Open(fname string, mode FileMode) (f DFSFile, err error) {
      if isBadFileName(fname) {
          return nil, BadFilenameError(fname)
+     }
+
+     // Can't operate on a file that is "owned" by a client that is disconnected
+     if (mode == READ || mode == WRITE) && c.IsConnected == false {
+         return nil, DisconnectedError(globalServerAddr)
      }
      // If the mode is WRITE, the file must acquire the lock before it can even open
      // Throw error if it cacnnot acquire the lock
