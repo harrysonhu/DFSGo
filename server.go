@@ -150,6 +150,55 @@ func (s *Server) GetMostUpdatedFile(c dfslib.Client, chunkMap *map[int]dfslib.Ch
 	return nil
 }
 
+func (s *Server) GetMostUpdatedChunk(args dfslib.FileChunk, answer *dfslib.Chunk) error {
+	maxVersion := 0
+	maxPossibleVersion := 0
+	for _, client := range s.RegisteredClients {
+		for fname, _ := range client.Files {
+			chunkNum := int(args.ChunkNum)
+			if fname == args.FileName {
+				fileMetadata := s.files[fname]
+				if fileMetadata.chunkVersionNum[chunkNum] > maxPossibleVersion {
+					// Figure out the max version ever for a chunk, whether or not
+					// the client is still connected
+					maxPossibleVersion = fileMetadata.chunkVersionNum[chunkNum]
+				}
+
+				// For a given file's metadata object, if the file has chunkNum with
+				// a newer version than the current max, and the client is still connected,
+				// then we want to return that chunk
+				if client.IsConnected && fileMetadata.chunkVersionNum[chunkNum] >= maxVersion {
+					*answer = fileMetadata.chunks[chunkNum]
+					maxVersion = fileMetadata.chunkVersionNum[chunkNum]
+				}
+			}
+		}
+	}
+	if maxVersion < maxPossibleVersion {
+		return dfslib.ChunkUnavailableError(args.ChunkNum)
+	}
+	return nil
+	//for _, obj := range s.files {
+	//	owner := s.RegisteredClients[obj.owner]
+	//	if obj.chunkVersionNum[int(chunkNum)] > maxPossibleVersion {
+	//		// Figure out the max version ever for a chunk, whether or not
+	//		// the client is still connected
+	//		maxPossibleVersion = obj.chunkVersionNum[int(chunkNum)]
+	//	}
+	//	// For a given file's metadata object, if the file has chunkNum with
+	//	// a newer version than the current max, and the client is still connected,
+	//	// then we want to return that chunk
+	//	if owner.IsConnected && obj.chunkVersionNum[int(chunkNum)] >= maxVersion {
+	//		*answer = obj.chunks[int(chunkNum)]
+	//		maxVersion = obj.chunkVersionNum[int(chunkNum)]
+	//	}
+	//}
+	//if maxVersion < maxPossibleVersion {
+	//	return dfslib.ChunkUnavailableError(chunkNum)
+	//}
+	//return nil
+}
+
 func (s *Server) GetSomeVersionOfFile(fname string, file *dfslib.DFSFileStruct) error {
 	// Loop through every client and the list of files each has
 	// If one of them has a file that matches the fname, and the client is still connected

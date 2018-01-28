@@ -164,6 +164,11 @@ type DFS interface {
     UMountDFS() (err error)
 }
 
+type FileChunk struct {
+    FileName string
+    ChunkNum uint8
+}
+
 type Client struct {
     clientToServerRpc *rpc.Client
     Files map[string]DFSFileStruct
@@ -191,11 +196,37 @@ func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
     if (dfs.mode == READ || dfs.mode == WRITE) && dfs.isClientConnected(dfs.Owner) == false {
         return DisconnectedError(globalServerAddr)
     }
-    readBuf := make([]byte, 32, 32)
-    offset := int64(chunkNum * 32)
-    _, err = dfs.file.ReadAt(readBuf, offset)
-    CheckError("Error in reading a chunk of a file: ", err)
-    copy(chunk[:], readBuf[:])
+
+    var chunkFetched Chunk
+    args := FileChunk{
+        FileName: dfs.Name,
+        ChunkNum: chunkNum,
+    }
+    err = dfs.connection.Call("Server.GetMostUpdatedChunk", args, &chunkFetched)
+    if err != nil {
+        return err
+    } else {
+        copy(chunk[:], chunkFetched[:])
+    }
+    //var writtenTo bool
+    //dfs.connection.Call("Server.IsChunkLatestVersion", fname, &writtenTo)
+    //// Check if file is trivial (each chunk version in chunkMap is 0 if len(chunkMap) is 0)
+    //if len(chunkMap) == 0 {
+    //    if writtenTo {
+    //        // The file exists globally, is not trivial,
+    //        // but the server is unable to download a copy of it,
+    //        // so return FileUnavailableError
+    //        return nil, FileUnavailableError(fname)
+    //    } else {
+    //        f = createFile(c, fname, mode)
+    //        return f, nil
+    //    }
+    //}
+    //readBuf := make([]byte, 32, 32)
+    //offset := int64(chunkNum * 32)
+    //_, err = dfs.file.ReadAt(readBuf, offset)
+    //CheckError("Error in reading a chunk of a file: ", err)
+    //copy(chunk[:], readBuf[:])
     return nil
 }
 
@@ -312,7 +343,6 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      }
 
      fileExistsGlobally, _ := c.GlobalFileExists(fname)
-     //var chunkMap map[int]Chunk
      if fileExistsGlobally {
          var writtenTo bool
          c.clientToServerRpc.Call("Server.HasFileBeenWrittenTo", fname, &writtenTo)
@@ -335,24 +365,6 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
              f = createFile(c, fname, mode)
              return f, nil
          }
-
-
-         //c.clientToServerRpc.Call("Server.GetMostUpdatedFile", c, &chunkMap)
-         //var writtenTo bool
-         //c.clientToServerRpc.Call("Server.HasFileBeenWrittenTo", fname, &writtenTo)
-         //// Check if file is trivial (each chunk version in chunkMap is 0 if len(chunkMap) is 0)
-         //if len(chunkMap) == 0 {
-         //    if writtenTo {
-         //        // The file exists globally, is not trivial,
-         //        // but the server is unable to download a copy of it,
-         //        // so return FileUnavailableError
-         //        return nil, FileUnavailableError(fname)
-         //    } else {
-         //        f = createFile(c, fname, mode)
-         //        return f, nil
-         //    }
-         //}
-
 
 		 //file, err := os.OpenFile(fname + ".dfs", os.O_RDWR, 0666)
 		 //CheckError("Error in downloading a non-trivial file from server and opening it: ", err)
