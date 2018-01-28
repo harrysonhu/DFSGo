@@ -287,7 +287,6 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          }
      }
      fileExistsLocally, _ := c.LocalFileExists(fname)
-     fileExistsGlobally, _ := c.GlobalFileExists(fname)
      if fileExistsLocally {
          if mode == READ {
              file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
@@ -300,14 +299,19 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
              f := c.Files[fname]
              f.file = *file
          } else if mode == DREAD {
-             file, err := os.OpenFile(fname, os.O_RDONLY, 0666)
-             CheckError("Error in opening the file for DREAD: ", err)
              f := c.Files[fname]
-             f.file = *file
+             f.mode = mode
+             c.Files[fname] = f
+             return f, nil
          }
          return f, nil
      }
+     if mode == DREAD {
+         // If the client is in DREAD mode and the file does not exist locally, error
+         return nil, FileDoesNotExistError(fname)
+     }
 
+     fileExistsGlobally, _ := c.GlobalFileExists(fname)
      var chunkMap map[int]Chunk
      if fileExistsGlobally {
          c.clientToServerRpc.Call("Server.GetMostUpdatedFile", c, &chunkMap)
@@ -325,8 +329,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
                  return f, nil
              }
          }
-         fname = fname + ".dfs"
-		 file, err := os.OpenFile(fname, os.O_RDWR, 0666)
+		 file, err := os.OpenFile(fname + ".dfs", os.O_RDWR, 0666)
 		 CheckError("Error in downloading a non-trivial file from server and opening it: ", err)
          for chunkNum, chunk := range chunkMap {
              offset := chunkNum * 32
@@ -340,6 +343,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          f.Name = fname
          f.file = *file
          f.mode = mode
+         c.Files[fname] = f
          return f, nil
      }
      f = createFile(c, fname, mode)
@@ -356,9 +360,9 @@ func (c Client) UMountDFS() (err error) {
     c.IsConnected = isConnected
     c.clientToServerRpc.Close()
     // Loop through every file a client has and close it
-    for _, dfsFile := range c.Files {
-        dfsFile.file.Close()
-    }
+    //for _, dfsFile := range c.Files {
+    //    dfsFile.file.Close()
+    //}
 
     return nil
 }
