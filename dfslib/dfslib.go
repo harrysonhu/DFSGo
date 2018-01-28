@@ -347,6 +347,10 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
  }
 
 func (c Client) UMountDFS() (err error) {
+    // Already disconnected, so throw error if client tries to disconnect again
+    if c.IsConnected == false {
+        return DisconnectedError(globalServerAddr)
+    }
     var isConnected bool
     c.clientToServerRpc.Call("Server.UnregisterClient", c, &isConnected)
     c.IsConnected = isConnected
