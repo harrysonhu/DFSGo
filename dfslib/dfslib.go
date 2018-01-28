@@ -223,6 +223,10 @@ func (dfs DFSFileStruct) Write(chunkNum uint8, chunk *Chunk) (err error) {
 }
 
 func (dfs DFSFileStruct) Close() (err error) {
+    if dfs.mode == WRITE {
+        var success bool
+        dfs.connection.Call("Server.ReleaseWriteLock", dfs.Name, &success)
+    }
     err = dfs.file.Close()
     CheckError("Error in closing the file: ", err)
 
@@ -260,6 +264,15 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
  func (c Client) Open(fname string, mode FileMode) (f DFSFile, err error) {
      if isBadFileName(fname) {
          return nil, BadFilenameError(fname)
+     }
+     // If the mode is WRITE, the file must acquire the lock before it can even open
+     // Throw error if it cacnnot acquire the lock
+     if mode == WRITE {
+         var success bool
+         c.clientToServerRpc.Call("Server.GetWriteLock", fname, &success)
+         if !success {
+             return nil, OpenWriteConflictError(fname)
+         }
      }
      fileExistsLocally, _ := c.LocalFileExists(fname)
      fileExistsGlobally, _ := c.GlobalFileExists(fname)

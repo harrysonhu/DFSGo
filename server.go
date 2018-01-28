@@ -9,7 +9,12 @@ import (
 	"./dfslib"
 	"math/rand"
 	"strconv"
+
+	"sync/atomic"
 )
+
+// Conurrency write lock
+var locker uint32
 
 var rpcConn *rpc.Client
 
@@ -148,6 +153,22 @@ func (s *Server) GetMostUpdatedFile(c dfslib.Client, chunkMap *map[int]dfslib.Ch
 func (s *Server) HasFileBeenWrittenTo(fname string, answer *bool) error {
 	fileMetadataObj := s.files[fname]
 	*answer = fileMetadataObj.writtenTo
+	return nil
+}
+
+func (s *Server) GetWriteLock(fname string, answer *bool) error {
+	if !atomic.CompareAndSwapUint32(&locker, 0, 1) {
+		*answer = false
+		return nil
+	}
+	*answer = true
+	return nil
+}
+
+func (s * Server) ReleaseWriteLock(fname string, success *bool) error {
+	// Release the lock, if it's relevant (WRITE mode only), when the file is closed
+	atomic.StoreUint32(&locker, 0)
+	*success = true
 	return nil
 }
 
