@@ -196,17 +196,25 @@ func (dfs DFSFileStruct) Read(chunkNum uint8, chunk *Chunk) (err error) {
     if (dfs.mode == READ || dfs.mode == WRITE) && dfs.isClientConnected(dfs.Owner) == false {
         return DisconnectedError(globalServerAddr)
     }
-
-    var chunkFetched Chunk
-    args := FileChunk{
-        FileName: dfs.Name,
-        ChunkNum: chunkNum,
-    }
-    err = dfs.connection.Call("Server.GetMostUpdatedChunk", args, &chunkFetched)
-    if err != nil {
-        return err
+    // Can't rely on server in DREAD mode
+    if dfs.mode == DREAD {
+        readBuf := make([]byte, 32, 32)
+        offset := int64(chunkNum * 32)
+        _, err = dfs.file.ReadAt(readBuf, offset)
+        CheckError("Error in reading a chunk of a file: ", err)
+        copy(chunk[:], readBuf[:])
     } else {
-        copy(chunk[:], chunkFetched[:])
+        var chunkFetched Chunk
+        args := FileChunk{
+            FileName: dfs.Name,
+            ChunkNum: chunkNum,
+        }
+        err = dfs.connection.Call("Server.GetMostUpdatedChunk", args, &chunkFetched)
+        if err != nil {
+            return err
+        } else {
+            copy(chunk[:], chunkFetched[:])
+        }
     }
     return nil
 }
