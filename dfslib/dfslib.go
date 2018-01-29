@@ -468,7 +468,7 @@ func Beat(sAddr string, msg string) {
 // - Networking errors related to localIP or serverAddr
 func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err error) {
     globalServerAddr = serverAddr
-    if _, err := os.Stat("." + localPath); err != nil {
+    if _, err := os.Stat(localPath); err != nil {
         // localPath does not exist
         if os.IsNotExist(err) {
             return nil, LocalPathError(localPath)
