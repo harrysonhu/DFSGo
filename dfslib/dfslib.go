@@ -305,7 +305,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
          return nil, DisconnectedError(globalServerAddr)
      }
      // If the mode is WRITE, the file must acquire the lock before it can even open
-     // Throw error if it cacnnot acquire the lock
+     // Throw error if it cannot acquire the lock
      if mode == WRITE {
          var success bool
          c.clientToServerRpc.Call("Server.GetWriteLock", fname, &success)
@@ -429,41 +429,31 @@ func (dfs DFSFileStruct) isClientConnected(clientId string) bool {
 	return isConnected;
 }
 
-func GoBeat(sAddr string, c Client) {
-    go func() {
-        for {
-            Beat(sAddr, "Hello")
-            // Beat every 2 seconds
-            time.Sleep(time.Second * 2)
-        }
-    }()
+//func GoBeat(sAddr string, c Client) {
+//    go func() {
+//        for {
+//            deadClient := ""
+//            c.clientToServerRpc.Call("Server.Heartbeat", c, &deadClient)
+//            // Beat every 2 seconds
+//            time.Sleep(time.Second * 2)
+//            if deadClient != "" {
+//                fmt.Println(deadClient)
+//            }
+//        }
+//    }()
+//}
 
-    // Listen to server response.. if server responds close, then close the
-    // client that is associated with this GoBeat (passed in parameters)
-    heartbeat, err := net.ResolveUDPAddr("udp", sAddr)
-    CheckError("ResolveUDPAddr failed: ", err)
-
-    heartbeatConn, err := net.ListenUDP("udp", heartbeat)
-    CheckError("ListenUDP for heartbeat failed: ", err)
-    readBuf := make([]byte, 100)
-    n, err := heartbeatConn.Read(readBuf)
-    CheckError("Reading heartbeat message from server failed: ", err)
-    if n > 0 {
-        c.UMountDFS()
-    }
-}
-
-func Beat(sAddr string, msg string) {
-    conn, err := net.DialTimeout("udp", sAddr, time.Second * 2)
-    CheckError("Error in setting up heartbeat connection: ", err)
-    // Close connection after every beat call
-    defer conn.Close()
-    
-    fmt.Println("Heartbeat debug msg: ", msg)
-    _, err = conn.Write([]byte(msg))
-
-    return
-}
+//func Beat(sAddr string, msg string) {
+//    conn, err := net.DialTimeout("udp", sAddr, time.Second * 2)
+//    CheckError("Error in setting up heartbeat connection: ", err)
+//    // Close connection after every beat call
+//    defer conn.Close()
+//
+//    fmt.Println("Heartbeat debug msg: ", msg)
+//    _, err = conn.Write([]byte(msg))
+//
+//    return
+//}
 
 // The constructor for a new DFS object instance. Takes the server's
 // IP:port address string as parameter, the localIP to use to
@@ -517,7 +507,7 @@ func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err
     client.Id = id
     client.IsConnected = true
 
-    // start UDP heartbeat for client
+    // Heartbeat
     //GoBeat(serverAddr, client)
 
     return client, nil

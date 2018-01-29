@@ -1,8 +1,6 @@
 package main
 
 import (
-	//"fmt"
-	//"log"
 	"net"
 	"net/rpc"
 	"os"
@@ -32,6 +30,7 @@ type Client struct {
 	Id string
 	LocalPath string
 	IsConnected bool
+	missedBeats int
 }
 
 type Server struct {
@@ -54,6 +53,8 @@ func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
 		IsConnected:       true,
 	}
 	s.RegisteredClients[*id] = serverClient
+
+	//handleHeartbeat(client.Ip)
 	return nil
 }
 
@@ -185,7 +186,7 @@ func (s *Server) GetWriteLock(fname string, answer *bool) error {
 	return nil
 }
 
-func (s * Server) ReleaseWriteLock(fname string, success *bool) error {
+func (s *Server) ReleaseWriteLock(fname string, success *bool) error {
 	// Release the lock, if it's relevant (WRITE mode only), when the file is closed
 	atomic.StoreUint32(&locker, 0)
 	*success = true
@@ -201,7 +202,6 @@ func main() {
 
 	incoming, err := net.ListenTCP("tcp", conn)
 	dfslib.CheckError("ListenTCP for server failed: ", err)
-	//handleHeartbeat(incomingIP)
 
 	server := new(Server)
 	server.RegisteredClients = make(map[string]Client)
@@ -214,36 +214,57 @@ func main() {
 
 }
 
-func handleHeartbeat(incomingIP string) {
-	heartbeat, err := net.ResolveUDPAddr("udp", incomingIP)
-	dfslib.CheckError("ResolveUDPAddr failed: ", err)
+// Unused heartbeat code - NOT working
+//func (s *Server) Heartbeat(c dfslib.Client, deadClient *string) error {
+//	//go func() {
+//		for {
+//			time.Sleep(time.Second * 2)
+//			for _, client := range s.RegisteredClients {
+//				if c.Id == client.Id {
+//					client.missedBeats = 0
+//				} else {
+//					client.missedBeats++
+//				}
+//
+//				if client.missedBeats == 2 {
+//					*deadClient = client.Id
+//				}
+//			}
+//		}
+//	//}()
+//	return nil
+//}
 
-	heartbeatConn, err := net.ListenUDP("udp", heartbeat)
-	dfslib.CheckError("ListenUDP for heartbeat failed: ", err)
-
-	go func() {
-		defer heartbeatConn.Close()
-		readBuf := make([]byte, 100)
-		missedBeats := 0
-		for {
-			n, err := heartbeatConn.Read(readBuf)
-			dfslib.CheckError("Error while receiving the heartbeat from client: ", err)
-
-			if n == 0 {
-				missedBeats++
-			} else {
-				missedBeats = 0
-			}
-
-			// After 3 straight missed beats (6 seconds), assume client is dead
-			if missedBeats == 3 {
-				// close client connection because client died
-				msg := "Close connection"
-				_, err = heartbeatConn.Write([]byte(msg))
-			}
-		}
-	}()
-}
+//func handleHeartbeat(incomingIP string) {
+//	heartbeat, err := net.ResolveUDPAddr("udp", incomingIP)
+//	dfslib.CheckError("ResolveUDPAddr failed: ", err)
+//
+//	heartbeatConn, err := net.ListenUDP("udp", heartbeat)
+//	dfslib.CheckError("ListenUDP for heartbeat failed: ", err)
+//
+//	go func() {
+//		defer heartbeatConn.Close()
+//		readBuf := make([]byte, 100)
+//		missedBeats := 0
+//		for {
+//			n, err := heartbeatConn.Read(readBuf)
+//			dfslib.CheckError("Error while receiving the heartbeat from client: ", err)
+//
+//			if n == 0 {
+//				missedBeats++
+//			} else {
+//				missedBeats = 0
+//			}
+//
+//			// After 3 straight missed beats (6 seconds), assume client is dead
+//			if missedBeats == 3 {
+//				// close client connection because client died
+//				msg := "Close connection"
+//				_, err = heartbeatConn.Write([]byte(msg))
+//			}
+//		}
+//	}()
+//}
 
 func blockForever() {
 	select {}
