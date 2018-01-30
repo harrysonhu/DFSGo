@@ -1,11 +1,11 @@
 package main
 
 import (
+	"./dfslib"
+	"math/rand"
 	"net"
 	"net/rpc"
 	"os"
-	"./dfslib"
-	"math/rand"
 	"strconv"
 
 	"sync/atomic"
@@ -17,26 +17,26 @@ var locker uint32
 var rpcConn *rpc.Client
 
 type MetadataObj struct {
-	chunkVersionNum [256]int					// The index position indicates the chunk #
-	owner string								// stores the client Id to identify the owner
-	chunks [256]dfslib.Chunk
-	writtenTo bool
+	chunkVersionNum [256]int // The index position indicates the chunk #
+	owner           string   // stores the client Id to identify the owner
+	chunks          [256]dfslib.Chunk
+	writtenTo       bool
 }
 
 type Client struct {
 	clientToServerRpc *rpc.Client
-	Files map[string]dfslib.DFSFileStruct
-	Ip string
-	Id string
-	LocalPath string
-	IsConnected bool
-	missedBeats int
+	Files             map[string]dfslib.DFSFileStruct
+	Ip                string
+	Id                string
+	LocalPath         string
+	IsConnected       bool
+	missedBeats       int
 }
 
 type Server struct {
 	RegisteredClients map[string]Client
-	files map[string]MetadataObj
-	fileNamesSeen map[string]bool               // Keeps track of all the files that has ever been created
+	files             map[string]MetadataObj
+	fileNamesSeen     map[string]bool // Keeps track of all the files that has ever been created
 }
 
 func (s *Server) RegisterClient(client *dfslib.Client, id *string) error {
@@ -269,4 +269,3 @@ func main() {
 func blockForever() {
 	select {}
 }
-
