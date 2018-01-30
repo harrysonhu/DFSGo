@@ -373,11 +373,15 @@ func (c Client) UMountDFS() (err error) {
     var isConnected bool
     c.clientToServerRpc.Call("Server.UnregisterClient", c, &isConnected)
     c.IsConnected = isConnected
-    c.clientToServerRpc.Close()
     // Loop through every file a client has and close it
-    //for _, dfsFile := range c.Files {
-    //    dfsFile.file.Close()
-    //}
+    for _, dfsFile := range c.Files {
+        if dfsFile.mode == WRITE {
+            var success bool
+            dfsFile.connection.Call("Server.ReleaseWriteLock", dfsFile.Name, &success)
+        }
+    }
+    c.clientToServerRpc.Close()
+
 
     return nil
 }
