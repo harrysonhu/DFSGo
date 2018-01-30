@@ -262,7 +262,7 @@ func (dfs DFSFileStruct) Close() (err error) {
     return nil
 }
 
-func (c Client) LocalFileExists(fname string) (exists bool, err error) {
+func (c *Client) LocalFileExists(fname string) (exists bool, err error) {
     if isBadFileName(fname) {
         return false, BadFilenameError(fname) 
     }
@@ -276,7 +276,7 @@ func (c Client) LocalFileExists(fname string) (exists bool, err error) {
     return false, nil
 }
 
-func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
+func (c *Client) GlobalFileExists(fname string) (exists bool, err error) {
     if isBadFileName(fname) {
         return false, BadFilenameError(fname) 
     }
@@ -294,7 +294,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
     return exists, err
 }
 
- func (c Client) Open(fname string, mode FileMode) (f DFSFile, err error) {
+ func (c *Client) Open(fname string, mode FileMode) (f DFSFile, err error) {
      if isBadFileName(fname) {
          return nil, BadFilenameError(fname)
      }
@@ -365,7 +365,7 @@ func (c Client) GlobalFileExists(fname string) (exists bool, err error) {
      return f, nil
  }
 
-func (c Client) UMountDFS() (err error) {
+func (c *Client) UMountDFS() (err error) {
     // Already disconnected, so throw error if client tries to disconnect again
     if c.IsConnected == false {
         return DisconnectedError(globalServerAddr)
@@ -386,7 +386,7 @@ func (c Client) UMountDFS() (err error) {
     return nil
 }
 
-func createFile (c Client, fname string, mode FileMode) DFSFile {
+func createFile (c *Client, fname string, mode FileMode) DFSFile {
     // If file doesn't exist globally or locally, create it here
     file, err := os.Create(fname + ".dfs")
 
@@ -484,7 +484,7 @@ func MountDFS(serverAddr string, localIP string, localPath string) (dfs DFS, err
     }
 
     localIP = localIP + ":0"
-    client := Client{
+    client := &Client{
         Files: make(map[string]DFSFileStruct),
         LocalPath: localPath,
     }
